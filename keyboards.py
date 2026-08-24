@@ -5,7 +5,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from config import (
     CHANNEL_LINK, TOPUP_AMOUNTS, TARIFF_LABELS, SUPPORT_USERNAME, ADMIN_IDS,
-    PRIVACY_POLICY_URL, TERMS_OF_USE_URL,
+    PRIVACY_POLICY_URL, TERMS_OF_USE_URL, rub_to_stars,
 )
 
 
@@ -66,6 +66,7 @@ def back_to_menu_kb() -> InlineKeyboardMarkup:
 def profile_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="💳 Пополнить баланс", callback_data="topup_menu")
+    kb.button(text="⭐ Оплатить звёздами", callback_data="topup_stars_menu")
     kb.button(text="◀️ В главное меню", callback_data="back_to_menu")
     kb.adjust(1)
     return kb.as_markup()
@@ -75,6 +76,16 @@ def topup_amounts_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for amount in TOPUP_AMOUNTS:
         kb.button(text=f"{amount}₽", callback_data=f"topup_{amount}")
+    kb.button(text="◀️ Назад", callback_data="menu_profile")
+    kb.adjust(2, 2, 1)
+    return kb.as_markup()
+
+
+def topup_stars_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for amount in TOPUP_AMOUNTS:
+        stars = rub_to_stars(amount)
+        kb.button(text=f"⭐ {stars} (≈{amount}₽)", callback_data=f"buy_stars_{amount}")
     kb.button(text="◀️ Назад", callback_data="menu_profile")
     kb.adjust(2, 2, 1)
     return kb.as_markup()
