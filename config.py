@@ -42,19 +42,10 @@ PLATEGA_RETURN_URL = os.getenv("PLATEGA_RETURN_URL", "https://t.me/PurioVPN")
 ENABLE_PLATEGA = bool(PLATEGA_MERCHANT_ID and PLATEGA_SECRET)
 
 # ============ БАЛАНС / ПОПОЛНЕНИЕ ============
-TOPUP_AMOUNTS = [150, 300, 500, 1000]  # руб.
-
-# ============ TELEGRAM STARS (оплата звёздами) ============
-# Оплата звёздами не требует отдельного мерчант-аккаунта — Telegram обрабатывает
-# её сам через Bot API (currency="XTR"), поэтому включена всегда.
-# Курс: сколько звёзд стоит 1 рубль пополнения баланса. По умолчанию 1 звезда = 2₽,
-# т.е. STARS_PER_RUB = 0.5. Поменять курс можно через .env, не трогая код.
-STARS_PER_RUB = float(os.getenv("STARS_PER_RUB", "0.5"))
-
-
-def rub_to_stars(rub_amount: float) -> int:
-    """Переводит сумму в рублях в целое количество звёзд (минимум 1)."""
-    return max(1, round(rub_amount * STARS_PER_RUB))
+# Пользователь сам вводит сумму пополнения (текстом), поэтому вместо
+# фиксированного списка сумм задаём только допустимые границы.
+TOPUP_MIN_AMOUNT = float(os.getenv("TOPUP_MIN_AMOUNT", "50"))
+TOPUP_MAX_AMOUNT = float(os.getenv("TOPUP_MAX_AMOUNT", "100000"))
 
 # ============ ТАРИФЫ ПОДПИСКИ ============
 # ключ — количество дней, значение — цена в рублях

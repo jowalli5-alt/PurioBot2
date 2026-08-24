@@ -12,10 +12,11 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 
 import database as db
 import keyboards as kb
+import remnawave_client
 from config import ADMIN_IDS
 from states import (
     AdminGiveBalance, AdminBroadcast, AdminMessageUser, AdminFindUser, AdminTicketReply,
-    AdminCreatePromo,
+    AdminCreatePromo, AdminGiveSubscription, AdminRevokeSubscription,
 )
 
 logger = logging.getLogger(__name__)
@@ -171,6 +172,168 @@ async def admin_find_user_show(message: Message, state: FSMContext):
         f"Заработано с рефералов: <b>{user['referral_earned']:.2f}₽</b>"
     )
     await message.answer(text, reply_markup=kb.admin_menu_kb())
+
+
+# ---------------- Подписка: выдать / забрать ----------------
+
+@router.callback_query(F.data == "admin_subscription_menu")
+async def cb_admin_subscription_menu(callback: CallbackQuery):
+    if not admin_only(callback.from_user.id):
+        return await callback.answer("Доступ запрещён", show_alert=True)
+
+    await callback.message.edit_text(
+        "🔑 <b>Подписка пользователя</b>\n\nВыбери действие:",
+        reply_markup=kb.admin_subscription_menu_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_give_subscription")
+async def cb_admin_give_subscription_start(callback: CallbackQuery, state: FSMContext):
+    if not admin_only(callback.from_user.id):
+        return await callback.answer("Доступ запрещён", show_alert=True)
+
+    await state.set_state(AdminGiveSubscription.waiting_user_id)
+    await callback.message.edit_text(
+        "Введи Telegram ID пользователя, которому нужно выдать подписку:",
+        reply_markup=kb.cancel_fsm_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminGiveSubscription.waiting_user_id)
+async def admin_give_subscription_userid(message: Message, state: FSMContext):
+    if not admin_only(message.from_user.id):
+        return
+
+    try:
+        target_id = int(message.text.strip())
+    except ValueError:
+        await message.answer("Нужно прислать число (Telegram ID). Попробуй ещё раз:")
+        return
+
+    user = await db.get_user(target_id)
+    if user is None:
+        await message.answer(
+            "Пользователь с таким ID не найден в базе (он ни разу не запускал бота). "
+            "Проверь ID и попробуй ещё раз:"
+        )
+        return
+
+    await state.update_data(target_id=target_id)
+    await state.set_state(AdminGiveSubscription.waiting_days)
+    await message.answer(
+        f"Пользователь найден: {user['username'] or user['full_name']}.\n\n"
+        f"На сколько дней выдать/продлить подписку? Введи число, например 30:"
+    )
+
+
+@router.message(AdminGiveSubscription.waiting_days)
+async def admin_give_subscription_days(message: Message, state: FSMContext):
+    if not admin_only(message.from_user.id):
+        return
+
+    try:
+        days = int(message.text.strip())
+        if days <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("Нужно положительное целое число дней, например 30. Попробуй ещё раз:")
+        return
+
+    data = await state.get_data()
+    target_id = data["target_id"]
+    await state.clear()
+
+    try:
+        subscription_url = await remnawave_client.provision_subscription(target_id, days)
+    except Exception:
+        logger.exception("Не удалось выдать подписку через Remnawave (админ-выдача)")
+        new_expire = await db.extend_subscription(target_id, days)
+        await db.add_log(
+            target_id, "admin_subscription_given_no_remnawave",
+            details=f"days={days} by={message.from_user.id}",
+        )
+        await message.answer(
+            f"⚠️ Дни начислены в базе ({days} дн.), но выдать доступ через Remnawave "
+            f"не получилось — выдай ссылку вручную.",
+            reply_markup=kb.admin_menu_kb(),
+        )
+        return
+
+    new_expire = await db.extend_subscription(
+        target_id, days, subscription_url=subscription_url, tariff_days=days, price=0,
+    )
+    await db.add_log(
+        target_id, "admin_subscription_given",
+        details=f"days={days} by={message.from_user.id}",
+    )
+
+    dt = datetime.fromtimestamp(new_expire)
+    await message.answer(
+        f"✅ Подписка выдана пользователю {target_id} до <b>{dt.strftime('%d.%m.%Y')}</b>.",
+        reply_markup=kb.admin_menu_kb(),
+    )
+    try:
+        await message.bot.send_message(
+            target_id,
+            f"🎁 Тебе выдана подписка на {days} дн. администратором!\n\n"
+            f"🔗 Ссылка для подключения:\n<code>{subscription_url}</code>",
+        )
+    except (TelegramForbiddenError, Exception):
+        pass
+
+
+@router.callback_query(F.data == "admin_revoke_subscription")
+async def cb_admin_revoke_subscription_start(callback: CallbackQuery, state: FSMContext):
+    if not admin_only(callback.from_user.id):
+        return await callback.answer("Доступ запрещён", show_alert=True)
+
+    await state.set_state(AdminRevokeSubscription.waiting_user_id)
+    await callback.message.edit_text(
+        "Введи Telegram ID пользователя, у которого нужно забрать подписку:",
+        reply_markup=kb.cancel_fsm_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminRevokeSubscription.waiting_user_id)
+async def admin_revoke_subscription_userid(message: Message, state: FSMContext):
+    if not admin_only(message.from_user.id):
+        return
+
+    try:
+        target_id = int(message.text.strip())
+    except ValueError:
+        await message.answer("Нужно прислать число (Telegram ID). Попробуй ещё раз:")
+        return
+
+    await state.clear()
+    user = await db.get_user(target_id)
+    if user is None:
+        await message.answer(
+            "Пользователь с таким ID не найден в базе.", reply_markup=kb.admin_menu_kb()
+        )
+        return
+
+    disabled = await remnawave_client.disable_user(target_id)
+    await db.revoke_subscription(target_id)
+    await db.add_log(
+        target_id, "admin_subscription_revoked",
+        details=f"by={message.from_user.id} remnawave_disabled={disabled}",
+    )
+
+    note = "" if disabled else "\n⚠️ Не удалось отключить доступ в Remnawave — проверь вручную."
+    await message.answer(
+        f"✅ Подписка пользователя {target_id} аннулирована.{note}",
+        reply_markup=kb.admin_menu_kb(),
+    )
+    try:
+        await message.bot.send_message(
+            target_id, "🔒 Твоя подписка на VPN была аннулирована администратором.",
+        )
+    except (TelegramForbiddenError, Exception):
+        pass
 
 
 # ---------------- Рассылка ----------------
@@ -580,6 +743,78 @@ async def cb_admin_promo_list(callback: CallbackQuery):
         "\n".join(lines), reply_markup=kb.admin_promo_list_kb(offset, has_more)
     )
     await callback.answer()
+
+
+# ---------------- История платежей ----------------
+
+@router.callback_query(F.data.startswith("admin_payments_"))
+async def cb_admin_payments(callback: CallbackQuery):
+    if not admin_only(callback.from_user.id):
+        return await callback.answer("Доступ запрещён", show_alert=True)
+
+    offset = int(callback.data.removeprefix("admin_payments_"))
+    payments = await db.list_payments(limit=10, offset=offset)
+    total = await db.count_payments()
+
+    if not payments:
+        await callback.message.edit_text("Платежей пока нет.", reply_markup=kb.admin_menu_kb())
+        await callback.answer()
+        return
+
+    status_marks = {"succeeded": "✅", "pending": "⏳", "canceled": "❌"}
+    lines = [f"🧾 <b>История платежей</b> (показано {offset + 1}-{offset + len(payments)} из {total})\n"]
+    for p in payments:
+        dt = datetime.fromtimestamp(p["created_at"]).strftime("%d.%m.%Y %H:%M")
+        mark = status_marks.get(p["status"], "•")
+        lines.append(
+            f"{mark} <code>{p['id']}</code> — {p['user_id']} — {p['amount']:.0f}₽ — {dt}"
+        )
+
+    has_more = offset + len(payments) < total
+    await callback.message.edit_text(
+        "\n".join(lines), reply_markup=kb.admin_payments_list_kb(offset, has_more)
+    )
+    await callback.answer()
+
+
+# ---------------- Серверы / мониторинг ----------------
+
+@router.callback_query(F.data == "admin_servers")
+async def cb_admin_servers(callback: CallbackQuery):
+    if not admin_only(callback.from_user.id):
+        return await callback.answer("Доступ запрещён", show_alert=True)
+
+    await callback.answer("Собираю данные с серверов⏳")
+
+    nodes = await remnawave_client.get_nodes_stats()
+    system_stats = await remnawave_client.get_system_stats()
+
+    lines = ["🖥 <b>Серверы</b>\n"]
+
+    if system_stats:
+        lines.append(
+            f"📡 <b>Мониторинг (всего)</b>\n"
+            f"Пользователей онлайн: <b>{system_stats.get('users_online') if system_stats.get('users_online') is not None else '—'}</b>\n"
+            f"Пользователей всего: <b>{system_stats.get('users_total') if system_stats.get('users_total') is not None else '—'}</b>\n"
+            f"Трафик суммарно: <b>{remnawave_client.format_bytes(system_stats.get('traffic_bytes'))}</b>\n"
+        )
+
+    if not nodes:
+        lines.append("⚠️ Не удалось получить список серверов (проверь подключение к Remnawave).")
+    else:
+        for node in nodes:
+            status = "🟢 онлайн" if node["online"] else ("🔴 офлайн" if node["online"] is False else "⚪️ неизвестно")
+            ping = f"{node['ping_ms']} мс" if node["ping_ms"] is not None else "—"
+            users = node["users_online"] if node["users_online"] is not None else "—"
+            traffic = remnawave_client.format_bytes(node["traffic_bytes"])
+            lines.append(
+                f"\n<b>{node['name']}</b> — {status}\n"
+                f"👥 Пользователей: {users}\n"
+                f"📶 Трафик: {traffic}\n"
+                f"🏓 Пинг: {ping}"
+            )
+
+    await callback.message.edit_text("\n".join(lines), reply_markup=kb.admin_servers_kb())
 
 
 # ---------------- Статистика ----------------

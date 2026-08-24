@@ -258,6 +258,20 @@ async def extend_subscription(
     return new_expire
 
 
+async def revoke_subscription(user_id: int):
+    """
+    Аннулирует подписку пользователя вручную (админ "забирает" подписку):
+    обнуляет subscription_expire/subscription_url в users и удаляет запись
+    из таблицы subscriptions. Баланс и рефералка не трогаются.
+    """
+    await _db.execute(
+        "UPDATE users SET subscription_expire = 0, subscription_url = NULL WHERE user_id = ?",
+        (user_id,),
+    )
+    await _db.execute("DELETE FROM subscriptions WHERE user_id = ?", (user_id,))
+    await _db.commit()
+
+
 async def purge_expired_subscriptions() -> list[int]:
     """
     Удаляет из таблицы subscriptions записи с истёкшим сроком (требование:
@@ -367,6 +381,21 @@ async def get_pending_payments() -> list[aiosqlite.Row]:
     _db.row_factory = aiosqlite.Row
     cur = await _db.execute("SELECT * FROM payments WHERE status = 'pending'")
     return await cur.fetchall()
+
+
+async def list_payments(limit: int = 10, offset: int = 0) -> list[aiosqlite.Row]:
+    """История платежей (все статусы), новые сверху — для админ-панели."""
+    _db.row_factory = aiosqlite.Row
+    cur = await _db.execute(
+        "SELECT * FROM payments ORDER BY created_at DESC LIMIT ? OFFSET ?", (limit, offset)
+    )
+    return await cur.fetchall()
+
+
+async def count_payments() -> int:
+    cur = await _db.execute("SELECT COUNT(*) FROM payments")
+    row = await cur.fetchone()
+    return row[0]
 
 
 async def add_referral_earned(user_id: int, amount: float):

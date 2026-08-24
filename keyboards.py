@@ -4,8 +4,8 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from config import (
-    CHANNEL_LINK, TOPUP_AMOUNTS, TARIFF_LABELS, SUPPORT_USERNAME, ADMIN_IDS,
-    PRIVACY_POLICY_URL, TERMS_OF_USE_URL, rub_to_stars,
+    CHANNEL_LINK, TARIFF_LABELS, SUPPORT_USERNAME, ADMIN_IDS,
+    PRIVACY_POLICY_URL, TERMS_OF_USE_URL,
 )
 
 
@@ -20,13 +20,14 @@ def channel_subscribe_kb() -> InlineKeyboardMarkup:
 def main_menu_kb(user_id: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="👤 Профиль", callback_data="menu_profile")
+    kb.button(text="💰 Баланс", callback_data="menu_balance")
     kb.button(text="🔑 Подписка", callback_data="menu_subscription")
     kb.button(text="📖 Инструкция", callback_data="menu_instructions")
     kb.button(text="🎟 Промокод", callback_data="promo_enter_start")
     kb.button(text="🤝 Рефералы", callback_data="menu_referral")
     kb.button(text="🆘 Поддержка", callback_data="menu_support")
     kb.button(text="📢 Наш канал", url=CHANNEL_LINK)
-    rows = [2, 2, 2, 1]
+    rows = [2, 2, 2, 2, 1]
     if user_id in ADMIN_IDS:
         kb.button(text="⚙️ Админ-панель", callback_data="menu_admin")
         rows.append(1)
@@ -65,29 +66,23 @@ def back_to_menu_kb() -> InlineKeyboardMarkup:
 
 def profile_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="💳 Пополнить баланс", callback_data="topup_menu")
-    kb.button(text="⭐ Оплатить звёздами", callback_data="topup_stars_menu")
+    kb.button(text="💰 Баланс", callback_data="menu_balance")
     kb.button(text="◀️ В главное меню", callback_data="back_to_menu")
     kb.adjust(1)
     return kb.as_markup()
 
 
-def topup_amounts_kb() -> InlineKeyboardMarkup:
+def balance_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    for amount in TOPUP_AMOUNTS:
-        kb.button(text=f"{amount}₽", callback_data=f"topup_{amount}")
-    kb.button(text="◀️ Назад", callback_data="menu_profile")
-    kb.adjust(2, 2, 1)
+    kb.button(text="💳 Пополнить баланс", callback_data="topup_start")
+    kb.button(text="◀️ В главное меню", callback_data="back_to_menu")
+    kb.adjust(1)
     return kb.as_markup()
 
 
-def topup_stars_kb() -> InlineKeyboardMarkup:
+def topup_cancel_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    for amount in TOPUP_AMOUNTS:
-        stars = rub_to_stars(amount)
-        kb.button(text=f"⭐ {stars} (≈{amount}₽)", callback_data=f"buy_stars_{amount}")
-    kb.button(text="◀️ Назад", callback_data="menu_profile")
-    kb.adjust(2, 2, 1)
+    kb.button(text="❌ Отмена", callback_data="topup_cancel")
     return kb.as_markup()
 
 
@@ -148,14 +143,49 @@ def ticket_created_kb() -> InlineKeyboardMarkup:
 def admin_menu_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="💰 Выдать баланс", callback_data="admin_give_balance")
+    kb.button(text="🔑 Подписка (выдать/забрать)", callback_data="admin_subscription_menu")
     kb.button(text="🔎 Найти пользователя (ID)", callback_data="admin_find_user")
     kb.button(text="✉️ Написать одному (ID)", callback_data="admin_message_user")
     kb.button(text="📣 Рассылка всем", callback_data="admin_broadcast")
     kb.button(text="🎫 Тикеты", callback_data="admin_tickets_0")
     kb.button(text="👥 Пользователи", callback_data="admin_users_0")
+    kb.button(text="🧾 История платежей", callback_data="admin_payments_0")
     kb.button(text="🎟 Промокоды", callback_data="admin_promo_menu")
+    kb.button(text="🖥 Серверы", callback_data="admin_servers")
     kb.button(text="📊 Статистика", callback_data="admin_stats")
     kb.button(text="◀️ В главное меню", callback_data="back_to_menu")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def admin_subscription_menu_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="➕ Выдать подписку", callback_data="admin_give_subscription")
+    kb.button(text="➖ Забрать подписку", callback_data="admin_revoke_subscription")
+    kb.button(text="◀️ В админ-панель", callback_data="menu_admin")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def admin_payments_list_kb(offset: int, has_more: bool) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    nav = []
+    if offset > 0:
+        nav.append(("⬅️ Назад", f"admin_payments_{max(offset - 10, 0)}"))
+    if has_more:
+        nav.append(("Вперёд ➡️", f"admin_payments_{offset + 10}"))
+    for text, cb in nav:
+        kb.button(text=text, callback_data=cb)
+    kb.button(text="◀️ В админ-панель", callback_data="menu_admin")
+    rows = ([2] if len(nav) == 2 else [1] * len(nav)) + [1]
+    kb.adjust(*rows)
+    return kb.as_markup()
+
+
+def admin_servers_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🔄 Обновить", callback_data="admin_servers")
+    kb.button(text="◀️ В админ-панель", callback_data="menu_admin")
     kb.adjust(1)
     return kb.as_markup()
 

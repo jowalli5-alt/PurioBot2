@@ -6,6 +6,22 @@ class AdminGiveBalance(StatesGroup):
     waiting_amount = State()
 
 
+class TopUpBalance(StatesGroup):
+    """Пользователь вводит сумму пополнения баланса вручную."""
+    waiting_amount = State()
+
+
+class AdminGiveSubscription(StatesGroup):
+    """Админ выдаёт подписку пользователю вручную (по ID и кол-ву дней)."""
+    waiting_user_id = State()
+    waiting_days = State()
+
+
+class AdminRevokeSubscription(StatesGroup):
+    """Админ забирает (аннулирует) подписку пользователя вручную."""
+    waiting_user_id = State()
+
+
 class AdminBroadcast(StatesGroup):
     waiting_text = State()
 

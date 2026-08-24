@@ -13,7 +13,7 @@ from config import BOT_TOKEN, ENABLE_PLATEGA
 import database as db
 from middlewares import SubscriptionCheckMiddleware
 
-from handlers import start, profile, subscription, referral, support, admin, instructions, promo, stars
+from handlers import start, profile, subscription, referral, support, admin, instructions, promo
 
 logging.basicConfig(
     level=logging.INFO,
@@ -92,7 +92,6 @@ async def main():
     dp.include_router(support.router)
     dp.include_router(instructions.router)
     dp.include_router(promo.router)
-    dp.include_router(stars.router)
     dp.include_router(admin.router)
 
     asyncio.create_task(expired_subscriptions_watcher())
